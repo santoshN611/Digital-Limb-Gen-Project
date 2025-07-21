@@ -140,43 +140,114 @@ def download_visible_ct():
 
 
 
-def download_ultrasound(n_slices: int = 128):
+def download_ultrasound(n_slices_full: int = 512,
+                        n_slices_fallback: int = 128) -> None:
     """
-    Mini-subset from openmedlab/Awesome-Medical-Dataset/UNS.md
-    ---------------------------------------------------------
-    • Works with both old markdown link lines and new <img src="…"> tags.
-    • Normalises GitHub blob URLs to raw.githubusercontent form.
-    • Saves case003_us.nii.gz (Z,Y,X) + JSON meta.
+    Ultrasound-Nerve dataset downloader with robust error handling.
+
+    ① Kaggle branch  (≈2.1 GB ZIP as of 2025-07)
+       • Needs ~/.kaggle/kaggle.json  OR  env-vars
+       • User must have joined & accepted competition rules once
+       • Accepts either *.zip or *.7z archive name
+       • If `imagecodecs` isn’t installed, prints fix and falls back
+
+    ② Fallback branch  (≈8 MB, 240 PNG demo frames from UNS.md)
+       • Keeps pipeline alive without Kaggle or imagecodecs
     """
-    import requests, re, io, numpy as np, imageio.v3 as iio, SimpleITK as sitk
-
-    md_url = ("https://raw.githubusercontent.com/openmedlab/"
-              "Awesome-Medical-Dataset/main/resources/UNS.md")
-    txt = requests.get(md_url, timeout=30).text
-
-    # regex matches: 1) markdown (…)png)   2)  <img src="…png">
-    pattern = r"(https://[^\s\"')]+\.png)"
-    links = re.findall(pattern, txt, flags=re.IGNORECASE)
-
-    # normalise any GitHub blob URLs → raw.githubusercontent URLs
-    norm = []
-    for u in links:
-        if "github.com" in u and "/blob/" in u:
-            u = u.replace("github.com", "raw.githubusercontent.com").replace("/blob/", "/")
-        norm.append(u)
-    links = norm[:n_slices]
-
-    if not links:
-        raise RuntimeError("UNS.md contains no downloadable PNG links")
-
-    print(f"Stacking {len(links)} ultrasound frames …")
-    vol = np.stack([iio.imread(io.BytesIO(requests.get(u, timeout=30).content))
-                    for u in links], axis=0)
+    # std-lib & scientific
+    import io, re, subprocess, requests, numpy as np, imageio.v3 as iio
+    import SimpleITK as sitk
+    from pathlib import Path
 
     out_nii = IMG / "case003_us.nii.gz"
+    if out_nii.exists():
+        print("Ultrasound volume already present – skipping download")
+        return
+
+    # ──────────────────────────────────────────────────────────────── #
+    # 1.  Kaggle download (try/except so we can gracefully fall back)
+    # ──────────────────────────────────────────────────────────────── #
+    try:
+        print("🔄  Trying Kaggle API for full ultrasound dataset …")
+        subprocess.run(
+            ["kaggle", "competitions", "download",
+             "-c", "ultrasound-nerve-segmentation", "-p", RAW],
+            check=True
+        )
+
+        # Detect whichever archive Kaggle produced
+        archives = (list(RAW.glob("ultrasound-nerve-segmentation.*")) +
+                    list(RAW.glob("train.zip.*")))
+        if not archives:
+            raise RuntimeError("No ultrasound archive found in data/raw")
+
+        arc = archives[0]
+        print(f"📦  Extracting {arc.name} …")
+        extract_dir = RAW / "us_full"
+        extract_dir.mkdir(exist_ok=True)
+
+        if arc.suffix == ".zip":
+            import zipfile
+            with zipfile.ZipFile(arc) as zf:
+                zf.extractall(extract_dir)
+        else:                                        # .7z or .7z.001
+            subprocess.run(["7z", "x", str(arc), f"-o{extract_dir}"],
+                           check=True)               # needs p7zip-full
+
+        tifs = sorted(extract_dir.rglob("*.tif"))[:n_slices_full]
+        if not tifs:
+            raise RuntimeError("No .tif files found after extraction")
+
+        # ---- try to import imagecodecs before reading LZW-compressed TIFFs
+        try:
+            import imagecodecs  # noqa: F401
+        except ModuleNotFoundError as ie:
+            raise RuntimeError(
+                "The TIFFs are LZW-compressed and require the "
+                "'imagecodecs' wheel (plus tifffile). "
+                "Install it with:\n"
+                "    pip install -U \"imageio[pyqt5,tifffile]\" imagecodecs"
+            ) from ie
+
+        # Read the chosen slices
+        vol = np.stack([iio.imread(str(p)) for p in tifs], axis=0)
+        sitk.WriteImage(sitk.GetImageFromArray(vol), str(out_nii))
+        _write_meta("case003", 172, 82)
+        print(f"✓ Full ultrasound stack saved → {out_nii}")
+        return
+
+    except (subprocess.CalledProcessError,
+            FileNotFoundError,
+            RuntimeError) as err:
+        print(f"⚠️  Kaggle branch failed – {err}")
+
+    # ──────────────────────────────────────────────────────────────── #
+    # 2.  Fallback: tiny public PNG subset
+    # ──────────────────────────────────────────────────────────────── #
+    print("🔄  Falling back to PNG sample from Awesome-Medical-Dataset …")
+    md_url = ("https://raw.githubusercontent.com/openmedlab/"
+              "Awesome-Medical-Dataset/main/resources/UNS.md")
+    md_text = requests.get(md_url, timeout=30).text  # may raise if offline
+
+    pattern = r"https://[^\s\"')]+\.(?:png|tif)"
+    urls = [u.replace("github.com", "raw.githubusercontent.com")
+              .replace("/blob/", "/")
+            for u in re.findall(pattern, md_text, flags=re.I)]
+    if not urls:
+        raise RuntimeError(
+            "PNG fallback list empty – pipeline cannot proceed. "
+            "Check your internet connection or the UNS.md source."
+        )
+
+    vol = np.stack([
+        iio.imread(io.BytesIO(requests.get(u, timeout=30).content))
+        for u in urls[:n_slices_fallback]
+    ], axis=0)
     sitk.WriteImage(sitk.GetImageFromArray(vol), str(out_nii))
     _write_meta("case003", 172, 82)
-    print(f"✓ Ultrasound stack saved to {out_nii}")
+    print(f"✓ Fallback ultrasound stack saved → {out_nii}")
+
+
 
 
 
