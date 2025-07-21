@@ -1,0 +1,20 @@
+{
+  "onset": {
+    "Description": "Event onset",
+    "Units": "second"
+  },
+  "duration": {
+    "Description": "Block duration",
+    "Units": "second"
+  },
+  "trial_type": {
+    "Description": "Type of block",
+    "Levels": {
+      "Tongue": "Repeatedly move the tongue left and right inside the mouth",
+      "LHand": "Repeatedly flex and extend the fingers of the left hand",
+      "RHand": "Repeatedly flex and extend the fingers of the right hand",
+      "LFoot": "Repeatedly flex and extend the toes of the left foot",
+      "RFoot": "Repeatedly flex and extend the toes of the right foot"
+    }
+  }
+}

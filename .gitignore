@@ -1,2 +1,4 @@
 mlruns/
 __pycache__/
+*.nii
+*.nii.gz

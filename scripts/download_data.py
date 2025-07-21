@@ -31,12 +31,27 @@ def fetch_openneuro(dataset="ds002766", out=pathlib.Path("data/raw")):
     out = out / dataset
     if out.exists(): return out
     if shutil.which("openneuro-py"):
-        subprocess.run(["openneuro-py", "download",
-                        f"--dataset={dataset}", "--include=sub-01/ses-01/anat",
-                        f"--directory={out}"], check=True)
+        SUBJECT = "sub-cast1"
+        SESSION = "ses-01"
+        INCLUDE = f"{SUBJECT}/{SESSION}"
+        cmd = [
+            "openneuro-py", "download",
+            f"--dataset={dataset}",
+            f"--include={INCLUDE}",
+            f"--target-dir={out}"
+        ]
+        subprocess.run(cmd, check=True)
     elif shutil.which("openneuro"):
-        subprocess.run(["openneuro", "download", dataset,
-                        "-d", out, "--include=sub-01/ses-01/anat"], check=True)
+        SUBJECT = "sub-cast1"
+        SESSION = "ses-01"
+        INCLUDE = f"{SUBJECT}/{SESSION}"
+        cmd = [
+            "openneuro", "download",
+            f"--dataset={dataset}",
+            f"--include={INCLUDE}",
+            f"--target-dir={out}"
+        ]
+        subprocess.run(cmd, check=True)
     else:
         raise RuntimeError("Install openneuro-py (pip) or @openneuro/cli (npm)")
     return out
@@ -49,24 +64,75 @@ def convert_dicom_to_nifti(dicom_dir: pathlib.Path, out_fp: pathlib.Path):
 def download_mrn():
     print("Downloading MR-neurography scan (OpenNeuro ds002766)…")
     dicom_root = fetch_openneuro()
-    # pick first DICOM series
-    dicom_dir = next(dicom_root.rglob("*.dcm")).parent
+
+    # Prepare output path
     out_nii = IMG / "case001_mrn.nii.gz"
-    convert_dicom_to_nifti(dicom_dir, out_nii)
+
+    # 1. Check for raw DICOM files
+    dcm_files = list(dicom_root.rglob("*.dcm"))
+    if dcm_files:
+        # Convert first DICOM series
+        dicom_dir = dcm_files[0].parent
+        convert_dicom_to_nifti(dicom_dir, out_nii)
+    else:
+        # 2. Fallback: use existing NIfTI directly
+        nii_files = list(dicom_root.rglob("*.nii.gz"))
+        if not nii_files:
+            raise RuntimeError(f"No DICOM or NIfTI files found in {dicom_root}")
+        print(f"No DICOM files found; copying NIfTI {nii_files[0].name}")
+        shutil.copy(nii_files[0], out_nii)
+
+    # 3. Write metadata as before
     _write_meta("case001", 180, 80)
 
 def download_visible_ct():
-    print("Downloading Visible Human CT slice…")
-    url = ("https://ftp.nlm.nih.gov/visible_human_datasets/"
-           "male/frozen/Frozen_Frames/head/ct/ct_001.tif")
-    out_tif = RAW / "vh_ct_001.tif"
-    if not out_tif.exists():
-        subprocess.run(["wget", "-q", "-O", out_tif, url], check=True)
-    # SimpleITK can read TIFF stack as volume
+    """
+    Download the Visible Human CT volume via FTP (anonymous),
+    fetch all PNG slices from the correct directory,
+    stack them into a 3D NumPy array, and save as NIfTI.
+    """
+    print("Downloading Visible Human CT volume from PNG slices…")
+
+    from ftplib import FTP
+    import io, re
+    import imageio
+    import numpy as np
     import SimpleITK as sitk
-    img = sitk.ReadImage(str(out_tif))
-    sitk.WriteImage(img, str(IMG / "case002_ct.nii.gz"))
+
+    # 1) Connect and login anonymously
+    ftp = FTP('ftp.nlm.nih.gov')
+    ftp.login()
+
+    # 2) Change to the exact absolute directory on the FTP server
+    ftp.cwd('/public/Visible-Human/Male-Images/PNG_format/radiological/frozenCT')
+
+    # 3) List and sort all PNG filenames
+    names = []
+    ftp.retrlines('NLST', names.append)         # get directory listing
+    png_files = sorted([n for n in names if n.lower().endswith('.png')])
+    if not png_files:
+        raise RuntimeError("No PNG slices found in FTP directory")
+
+    # 4) Download each slice into memory and read via imageio
+    volume_slices = []
+    for fname in png_files:
+        bio = io.BytesIO()
+        ftp.retrbinary(f'RETR {fname}', bio.write)  # fetch file bytes
+        bio.seek(0)
+        arr = imageio.imread(bio)                   # read PNG from buffer
+        volume_slices.append(arr)
+
+    ftp.quit()
+
+    # 5) Stack into a 3D volume and save as NIfTI
+    volume = np.stack(volume_slices, axis=0)
+    sitk_image = sitk.GetImageFromArray(volume)
+    sitk.WriteImage(sitk_image, str(IMG / "case002_ct.nii.gz"))
+
+    # 6) Write metadata side-car
     _write_meta("case002", 178, 77)
+
+
 
 def download_ultrasound():
     print("Downloading Kaggle Ultrasound Nerve Segmentation subset…")

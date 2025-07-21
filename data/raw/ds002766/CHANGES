@@ -1,0 +1,16 @@
+3.0.2 2020-07-30
+  - Fixed task ciftis for sub-cast3 
+3.0.1 2020-06-30
+  - OpenNeuro maintenance
+3.0.0 2020-06-21
+  - Added data from control experiment ("on" and "off" conditions)
+2.0.1 2020-06-19
+  - Added complete session lists for all subjects
+2.0.0 2020-06-18
+  - Uploaded the rest of the data
+1.0.1 2020-06-18
+  - added the rest of the raw data and derivatives
+
+1.0.0	2020-04-30
+
+	- Initial snapshot

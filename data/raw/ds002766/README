@@ -1,0 +1,30 @@
+# Experiment
+
+Three healthy adult participants wore a cast covering the entire right upper extremity for two weeks. They were scanned every day for 6-9 weeks. Scans included 42-64 daily 30-minute resting-state functional MRI scans before, during and after casting. Participants later underwent 12-24 additional scans as part of a control experiment. In all, we collected 27-43 hours of resting-state functional MRI data in each individual.
+
+Participants also performed a block-design movement task (right hand, left hand, right foot, left foot, tongue) for 8 minutes each night prior to casting.
+
+Details of this dataset are described in Newbold et al., Plasticity and Spontaneous Activity Pulses in Disused Human Brain Circuits, Neuron (2020), https://doi.org/10.1016/j.neuron.2020.05.007. This manuscript should be cited whenever publishing work using this dataset.
+
+
+# Raw data
+
+Sessions are grouped into 5 conditions. 3 conditions (pre, cast, post) correspond to the original experiment. 2 conditions (on, off) correspond to a control experiment in which participants wore a removable cast during scanning (on sessions) but were not casted during daily life.
+
+Two participants were also studied in a previous experiment, the Midnight Scan Club (MSC) experiment (Gordon et al, 2017, https://openneuro.org/datasets/ds000224). sub-cast1 was sub-MSC02. sub-cast2 was sub-MSC06. Carried forward many of the methods from the MSC experiment to the current study.
+
+MSC participants were scanned using a 3T Siemens Trio MRI scanner.  BOLD data were acquired at a spatial resolution of 4mm, single-band, with a TR of 2.2s. We used identical sequences for sub-cast1 during the original cast experiment (but not during the later control experiment).
+
+After running sub-cast1, a new MRI scanner became available. sub-cast2 and sub-cast3 were scanned on a 3T Siemens Prisma using new sequences. The updated scanner and sequences were also appleid to sub-cast1 during the later control experiment. BOLD data for these scans were acquired at a spatial resolution 2.4mm, multi-band 4, with a TR of 1.1s.
+
+
+# Pre-processed data 
+
+In addition to the raw BOLD and structural data we collected, we have also provided fully pre-processed rs-fMRI and task-fMRI data. Processing pipelines are described in Newbold et al, 2020 and all processing scripts are available on GitLab (https://gitlab.com/DosenbachGreene/cast-induced-plasticity). Processed data are provided in volume space as well as cifti space -- combined cortical surface data and sub-cortical/cerebellar volume data.
+
+Surface projection followed methods described in Gordon et al, 2017. Derivative structural files needed for cifti creation (e.g. pial/white surfaces, subcortical masks) are provided for sub-cast2 and sub-cast3. Because sub-cast1 was scanned using the same scanner and sequences used for the MSC study, cortical projections for sub-cast1 used the projection files generated for sub-MSC02 (https://openneuro.org/datasets/ds000224, derivatives/surface_pipeline/sub-MSC02/fs_LR_Talairach/).
+
+
+# Parcellations
+
+Surface parcellations for sub-cast3 were created using methods described by Gordon et al (2017). Corresponding parcellations for sub-cast1 and sub-cast2 can be found in the MSC dataset (https://openneuro.org/datasets/ds000224, derivatives/surface_pipeline/sub-{subject}/surface_parcellation).
