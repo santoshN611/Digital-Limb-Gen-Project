@@ -87,73 +87,98 @@ def download_mrn():
 
 def download_visible_ct():
     """
-    Download the Visible Human CT volume via FTP (anonymous),
-    fetch all PNG slices from the correct directory,
-    stack them into a 3D NumPy array, and save as NIfTI.
+    Visible Human Male – Frozen CT (PNG → NIfTI)
+
+    • Downloads the current ZIP bundle published by NLM
+      (CT Scans After Freezing.zip, ~440 kB sample stack).
+    • Extracts with std-lib zipfile → no /usr/bin/unzip needed.
+    • Stacks PNG slices, writes case002_ct.nii.gz + metadata.
     """
-    print("Downloading Visible Human CT volume from PNG slices…")
+    import requests, zipfile, glob, imageio.v3 as iio
+    import numpy as np, SimpleITK as sitk
 
-    from ftplib import FTP
-    import io, re
-    import imageio
-    import numpy as np
-    import SimpleITK as sitk
+    # ------------------------------------------------------------------ #
+    # 1) Fetch the ZIP (spaces MUST be %20-encoded!)
+    # ------------------------------------------------------------------ #
+    url = ("https://data.lhncbc.nlm.nih.gov/public/Visible-Human/"
+           "Sample-Data/CT%20Scans%20After%20Freezing.zip")
+    zip_path = RAW / "vh_ct.zip"
+    if not zip_path.exists():
+        print("Downloading Visible Human CT ZIP …")
+        r = requests.get(url, timeout=120)
+        r.raise_for_status()
+        zip_path.write_bytes(r.content)
 
-    # 1) Connect and login anonymously
-    ftp = FTP('ftp.nlm.nih.gov')
-    ftp.login()
+    # ------------------------------------------------------------------ #
+    # 2) Extract with Python’s zipfile (cross-platform)
+    # ------------------------------------------------------------------ #
+    extract_dir = RAW / "vh_ct"
+    if not extract_dir.exists():
+        print("Extracting PNG slices …")
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            zf.extractall(extract_dir)
 
-    # 2) Change to the exact absolute directory on the FTP server
-    ftp.cwd('/public/Visible-Human/Male-Images/PNG_format/radiological/frozenCT')
-
-    # 3) List and sort all PNG filenames
-    names = []
-    ftp.retrlines('NLST', names.append)         # get directory listing
-    png_files = sorted([n for n in names if n.lower().endswith('.png')])
+    # ------------------------------------------------------------------ #
+    # 3) Stack PNGs → volume
+    # ------------------------------------------------------------------ #
+    png_files = sorted(glob.glob(str(extract_dir / "*.png")))
     if not png_files:
-        raise RuntimeError("No PNG slices found in FTP directory")
+        raise RuntimeError(
+            "ZIP extracted but contained no PNG files - "
+            "check the download URL or permissions."
+        )
+    print(f"Found {len(png_files)} PNG slices; building volume …")
+    volume = np.stack([iio.imread(p) for p in png_files], axis=0)
 
-    # 4) Download each slice into memory and read via imageio
-    volume_slices = []
-    for fname in png_files:
-        bio = io.BytesIO()
-        ftp.retrbinary(f'RETR {fname}', bio.write)  # fetch file bytes
-        bio.seek(0)
-        arr = imageio.imread(bio)                   # read PNG from buffer
-        volume_slices.append(arr)
-
-    ftp.quit()
-
-    # 5) Stack into a 3D volume and save as NIfTI
-    volume = np.stack(volume_slices, axis=0)
-    sitk_image = sitk.GetImageFromArray(volume)
-    sitk.WriteImage(sitk_image, str(IMG / "case002_ct.nii.gz"))
-
-    # 6) Write metadata side-car
+    # ------------------------------------------------------------------ #
+    # 4) Save NIfTI + metadata
+    # ------------------------------------------------------------------ #
+    out_nii = IMG / "case002_ct.nii.gz"
+    sitk.WriteImage(sitk.GetImageFromArray(volume), str(out_nii))
     _write_meta("case002", 178, 77)
+    print(f"✓ Visible Human CT saved to {out_nii}")
 
 
 
-def download_ultrasound():
-    print("Downloading Kaggle Ultrasound Nerve Segmentation subset…")
-    url = ("https://raw.githubusercontent.com/openmedlab/"
-           "Awesome-Medical-Dataset/main/resources/UNS.md")
-    md = RAW / "us_nerve.md"
-    if not md.exists():
-        subprocess.run(["wget", "-q", "-O", md, url], check=True)
-    # this MD lists links to individual PNGs; grab first 100
-    import re, requests, io, numpy as np, SimpleITK as sitk
-    links = re.findall(r"https://[^\s)]+png", md.read_text())[:100]
-    vol = []
-    for i, l in enumerate(links):
-        print(f" {i:03}", end="\r"); sys.stdout.flush()
-        img_arr = sitk.GetArrayFromImage(
-            sitk.ReadImage(io.BytesIO(requests.get(l).content)))
-        vol.append(img_arr)
-    vol = np.stack(vol)
-    sitk.WriteImage(sitk.GetImageFromArray(vol),
-                    str(IMG / "case003_us.nii.gz"))
+def download_ultrasound(n_slices: int = 128):
+    """
+    Mini-subset from openmedlab/Awesome-Medical-Dataset/UNS.md
+    ---------------------------------------------------------
+    • Works with both old markdown link lines and new <img src="…"> tags.
+    • Normalises GitHub blob URLs to raw.githubusercontent form.
+    • Saves case003_us.nii.gz (Z,Y,X) + JSON meta.
+    """
+    import requests, re, io, numpy as np, imageio.v3 as iio, SimpleITK as sitk
+
+    md_url = ("https://raw.githubusercontent.com/openmedlab/"
+              "Awesome-Medical-Dataset/main/resources/UNS.md")
+    txt = requests.get(md_url, timeout=30).text
+
+    # regex matches: 1) markdown (…)png)   2)  <img src="…png">
+    pattern = r"(https://[^\s\"')]+\.png)"
+    links = re.findall(pattern, txt, flags=re.IGNORECASE)
+
+    # normalise any GitHub blob URLs → raw.githubusercontent URLs
+    norm = []
+    for u in links:
+        if "github.com" in u and "/blob/" in u:
+            u = u.replace("github.com", "raw.githubusercontent.com").replace("/blob/", "/")
+        norm.append(u)
+    links = norm[:n_slices]
+
+    if not links:
+        raise RuntimeError("UNS.md contains no downloadable PNG links")
+
+    print(f"Stacking {len(links)} ultrasound frames …")
+    vol = np.stack([iio.imread(io.BytesIO(requests.get(u, timeout=30).content))
+                    for u in links], axis=0)
+
+    out_nii = IMG / "case003_us.nii.gz"
+    sitk.WriteImage(sitk.GetImageFromArray(vol), str(out_nii))
     _write_meta("case003", 172, 82)
+    print(f"✓ Ultrasound stack saved to {out_nii}")
+
+
 
 def main():
     p = argparse.ArgumentParser()
