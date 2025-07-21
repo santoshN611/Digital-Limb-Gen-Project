@@ -2,3 +2,4 @@ data:
   root: ../../data/ImagesTr
 train:
   epochs: 20
+  num_classes: 4
