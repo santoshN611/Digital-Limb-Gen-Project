@@ -1,0 +1,4 @@
+data:
+  root: ../../data/ImagesTr
+train:
+  epochs: 20
