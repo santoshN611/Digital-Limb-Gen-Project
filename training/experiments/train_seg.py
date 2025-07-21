@@ -1,8 +1,8 @@
 import hydra, mlflow, torch, pathlib
 from omegaconf import DictConfig
 from torch.utils.data import DataLoader
-from datasets.limb_dataset import LimbDataset
-from nets.dynunet import get_dynunet
+from training.datasets.limb_dataset import LimbDataset
+from training.nets.dynunet import get_dynunet
 
 @hydra.main(config_path="../configs", config_name="seg.yaml")
 def main(cfg: DictConfig):
